@@ -100,3 +100,50 @@ class OllamaAdapter(BaseAdapter):
             logger.error(f"Ollama /api/tags error: {e}")
         
         return models
+    
+    async def load_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Load a model into memory by sending an empty prompt.
+        Ollama loads the model when a request is made.
+        """
+        try:
+            resp = await client.post(
+                f"{self.base_url}/api/generate",
+                headers=self.get_headers(),
+                json={"model": model_id, "prompt": "", "stream": False},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            # Try to extract error message from response
+            try:
+                err_data = resp.json()
+                err_msg = err_data.get("error", f"HTTP {resp.status_code}")
+            except:
+                err_msg = f"HTTP {resp.status_code}"
+            return {"success": False, "error": err_msg}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def unload_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Unload a model from memory using POST /api/generate with empty prompt + keep_alive: 0
+        """
+        try:
+            resp = await client.post(
+                f"{self.base_url}/api/generate",
+                headers=self.get_headers(),
+                json={"model": model_id, "prompt": "", "stream": False, "keep_alive": 0},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            # Try to extract error message from response
+            try:
+                err_data = resp.json()
+                err_msg = err_data.get("error", f"HTTP {resp.status_code}")
+            except:
+                err_msg = f"HTTP {resp.status_code}"
+            return {"success": False, "error": err_msg}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

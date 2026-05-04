@@ -148,6 +148,24 @@
             white-space: nowrap;
             flex-shrink: 0;
             vertical-align: middle;
+            background: none;
+            border: none;
+            cursor: default;
+            transition: all 0.2s;
+        }
+        
+        .model-status.load-btn, .model-status.unload-btn {
+            cursor: pointer;
+        }
+        
+        .model-status.load-btn:hover {
+            background: #10b98155 !important;
+            color: #10b981 !important;
+        }
+        
+        .model-status.unload-btn:hover {
+            background: #ef444455 !important;
+            color: #ef4444 !important;
         }
         
         .model-loaded { background: #10b98133; color: #10b981; }
@@ -216,18 +234,79 @@
             font-size: 0.85rem;
         }
         
-        .loading {
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            max-width: 350px;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .toast.success {
+            background: #10b981;
+            color: #fff;
+        }
+        
+        .toast.error {
+            background: #ef4444;
+            color: #fff;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        
+        .spinner {
             display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #667eea;
+            width: 12px;
+            height: 12px;
+            border: 2px solid currentColor;
             border-radius: 50%;
             border-top-color: transparent;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
         
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+        
+        }
+        
+        .btn-unload:hover {
+            color: #ef4444;
+        }
+        
+        .model-item-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            gap: 12px;
+        }
+        
+        .model-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            flex: 1;
         }
     </style>
 </head>
@@ -250,6 +329,8 @@
     </div>
     
     <p class="last-update" id="lastUpdate">Last updated: --</p>
+    
+    <div class="toast-container" id="toastContainer"></div>
     
     <script>
         let refreshTimer = null;
@@ -332,8 +413,10 @@
                 
                 const modelItems = sortedModels.map(m => {
                     // Load status with different icons
-                    const loadClass = m.load_status === 'loaded' ? 'model-loaded' :
-                                     m.load_status === 'loading' ? 'model-loading' : 'model-idle';
+                    const isLoaded = m.load_status === 'loaded';
+                    const isLoading = m.load_status === 'loading';
+                    const statusClass = m.load_status === 'loaded' ? 'model-loaded' :
+                                        m.load_status === 'loading' ? 'model-loading' : 'model-idle';
                     const loadText = m.load_status === 'loaded' ? '● Loaded' :
                                     m.load_status === 'loading' ? '◐ Loading' : '○ Unloaded';
                     
@@ -345,9 +428,22 @@
                         activityLine = `<br><span class="model-status ${actClass}" style="margin-left:0;margin-top:4px;display:inline-block;font-size:0.85em">${actText}</span>`;
                     }
                     
+                    // Status becomes clickable button on hover
+                    const statusBtnClass = isLoading ? '' : isLoaded ? 'unload-btn' : 'load-btn';
+                    const statusOnClick = isLoading ? '' : isLoaded ? 
+                        `onclick="unloadModel('${server.type}', '${server.name}', '${m.id}', this)"` :
+                        `onclick="loadModel('${server.type}', '${server.name}', '${m.id}', this)"`;
+                    const statusTitle = isLoading ? '' : isLoaded ? 'Click to unload' : 'Click to load';
+                    
                     return `<li class="model-item">
-                        <span class="model-name" title="${m.id}">${m.id}</span>
-                        <span class="model-status ${loadClass}">${loadText}${activityLine}</span>
+                        <div class="model-item-row">
+                            <div class="model-info">
+                                <span class="model-name" title="${m.id}">${m.id}</span>
+                            </div>
+                            <div>
+                                <button class="model-status ${statusClass} ${statusBtnClass}" ${statusOnClick} title="${statusTitle}" ${isLoading ? 'disabled' : ''}>${loadText}${activityLine}</button>
+                            </div>
+                        </div>
                     </li>`;
                 }).join('');
                 
@@ -389,6 +485,68 @@
                     ${errorHtml}
                 </div>`;
             }).join('');
+        }
+        
+        async function loadModel(serverType, serverName, modelId, btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+            try {
+                const resp = await fetch(`/api/models/${serverType}/${serverName}/load`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_id: modelId})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(`${modelId} loaded`, 'success');
+                    setTimeout(fetchStatus, 500);
+                } else {
+                    showToast(`Load failed: ${result.error}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '● Loaded';
+                }
+            } catch (e) {
+                showToast(`Error: ${e}`, 'error');
+                btn.disabled = false;
+                btn.textContent = '● Loaded';
+            }
+        }
+        
+        async function unloadModel(serverType, serverName, modelId, btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+            try {
+                const resp = await fetch(`/api/models/${serverType}/${serverName}/unload`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_id: modelId})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(`${modelId} unloaded`, 'success');
+                    setTimeout(fetchStatus, 500);
+                } else {
+                    showToast(`Unload failed: ${result.error}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '○ Unloaded';
+                }
+            } catch (e) {
+                showToast(`Error: ${e}`, 'error');
+                btn.disabled = false;
+                btn.textContent = '○ Unloaded';
+            }
+        }
+        
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
     </script>
 </body>

@@ -67,6 +67,15 @@ class MonitorResponse(BaseModel):
     timestamp: str
 
 
+class ModelActionRequest(BaseModel):
+    model_id: str
+
+
+class ModelActionResponse(BaseModel):
+    success: bool
+    error: Optional[str] = None
+
+
 # ============ API Endpoints ============
 
 @app.get("/api/status", response_model=MonitorResponse)
@@ -118,6 +127,56 @@ async def get_config():
         "refresh_intervals": CONFIG["refresh_intervals"],
         "default_refresh": CONFIG["default_refresh"]
     }
+
+
+@app.post("/api/models/{server_type}/{server_name}/load", response_model=ModelActionResponse)
+async def load_model(server_type: str, server_name: str, request: ModelActionRequest):
+    """Load a model on a specific server"""
+    # Find server config
+    server_config = None
+    for s in CONFIG["servers"]:
+        if s["name"] == server_name and s["type"] == server_type:
+            server_config = s
+            break
+    
+    if not server_config:
+        return ModelActionResponse(success=False, error=f"Server not found: {server_name}")
+    
+    adapter = get_adapter(
+        server_type=server_config["type"],
+        base_url=server_config["base_url"],
+        api_key=server_config.get("api_key", "")
+    )
+    
+    async with httpx.AsyncClient() as client:
+        result = await adapter.load_model(client, request.model_id)
+    
+    return ModelActionResponse(**result)
+
+
+@app.post("/api/models/{server_type}/{server_name}/unload", response_model=ModelActionResponse)
+async def unload_model(server_type: str, server_name: str, request: ModelActionRequest):
+    """Unload a model from a specific server"""
+    # Find server config
+    server_config = None
+    for s in CONFIG["servers"]:
+        if s["name"] == server_name and s["type"] == server_type:
+            server_config = s
+            break
+    
+    if not server_config:
+        return ModelActionResponse(success=False, error=f"Server not found: {server_name}")
+    
+    adapter = get_adapter(
+        server_type=server_config["type"],
+        base_url=server_config["base_url"],
+        api_key=server_config.get("api_key", "")
+    )
+    
+    async with httpx.AsyncClient() as client:
+        result = await adapter.unload_model(client, request.model_id)
+    
+    return ModelActionResponse(**result)
 
 
 # ============ Frontend ============

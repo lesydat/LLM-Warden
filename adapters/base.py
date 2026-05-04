@@ -40,3 +40,17 @@ class BaseAdapter(ABC):
         Returns list of dicts with: id, name, status (loaded/unloaded/running), memory, context_window
         """
         raise NotImplementedError
+    
+    async def load_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Load a model into memory
+        Returns dict with 'success' (bool) and optional 'error' (str)
+        """
+        raise NotImplementedError
+    
+    async def unload_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Unload a model from memory
+        Returns dict with 'success' (bool) and optional 'error' (str)
+        """
+        raise NotImplementedError

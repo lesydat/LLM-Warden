@@ -208,3 +208,49 @@ class OmlxAdapter(BaseAdapter):
             logger.error(f"oMLX /v1/models error: {e}")
         
         return models
+    
+    async def _get_admin_cookies(self, client: httpx.AsyncClient) -> dict:
+        """Get cookies for admin API (reuses session or logs in)"""
+        if self._admin_cookie:
+            return {"omlx_admin_session": self._admin_cookie}
+        return {"omlx_admin_session": self.api_key}
+    
+    async def load_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Load a model using POST /admin/api/models/{model_id}/load
+        """
+        # Ensure we have valid session
+        await self._get_admin_stats(client)
+        cookies = await self._get_admin_cookies(client)
+        
+        try:
+            resp = await client.post(
+                f"{self.base_url}/admin/api/models/{model_id}/load",
+                cookies=cookies,
+                timeout=60
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            return {"success": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def unload_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Unload a model using POST /admin/api/models/{model_id}/unload
+        """
+        # Ensure we have valid session
+        await self._get_admin_stats(client)
+        cookies = await self._get_admin_cookies(client)
+        
+        try:
+            resp = await client.post(
+                f"{self.base_url}/admin/api/models/{model_id}/unload",
+                cookies=cookies,
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            return {"success": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

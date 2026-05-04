@@ -67,3 +67,37 @@ class LlamacppAdapter(BaseAdapter):
             logger.error(f"llama.cpp /v1/models error: {e}")
         
         return models
+    
+    async def load_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Load a model using POST /models/load
+        """
+        try:
+            resp = await client.post(
+                f"{self.base_url}/models/load",
+                headers=self.get_headers(),
+                json={"model": model_id},
+                timeout=60
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            return {"success": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def unload_model(self, client: httpx.AsyncClient, model_id: str) -> dict:
+        """
+        Unload a model using POST /models/unload
+        """
+        try:
+            resp = await client.post(
+                f"{self.base_url}/models/unload",
+                headers=self.get_headers(),
+                json={"model": model_id},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return {"success": True, "error": None}
+            return {"success": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
