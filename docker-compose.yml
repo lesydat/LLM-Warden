@@ -1,0 +1,12 @@
+services:
+  ai-server-control:
+    container_name: ai-server-control
+    build: .
+    ports:
+      - 8000:8000
+    volumes:
+      - data:/data
+
+volumes:
+  data:
+    name: ai-server-control

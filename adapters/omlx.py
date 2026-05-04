@@ -3,7 +3,10 @@ Adapter for oMLX server
 oMLX provides OpenAI-compatible API and health endpoint with memory info
 """
 
+import json
 import logging
+import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -12,6 +15,45 @@ from .base import BaseAdapter
 
 logger = logging.getLogger(__name__)
 
+import os
+
+# Cache directory: /data (docker) or ~/.cache/ai-server-control/ (manual)
+_CACHE_DIR = os.environ.get("CONFIG_DIR")  # shares CONFIG_DIR from docker
+if _CACHE_DIR:
+    SESSION_CACHE_DIR = Path(_CACHE_DIR)
+else:
+    SESSION_CACHE_DIR = Path.home() / ".cache" / "ai-server-control"
+SESSION_CACHE_FILE = SESSION_CACHE_DIR / "omlx_sessions.json"
+
+
+def _get_cached_session(base_url: str) -> Optional[str]:
+    """Get cached session for a base_url from file"""
+    try:
+        if SESSION_CACHE_FILE.exists():
+            sessions = json.loads(SESSION_CACHE_FILE.read_text())
+            entry = sessions.get(base_url, {})
+            return entry.get("session_cookie")
+    except Exception as e:
+        logger.warning(f"Failed to read session cache: {e}")
+    return None
+
+
+def _save_session(base_url: str, session_cookie: str):
+    """Save session cookie to file"""
+    try:
+        SESSION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        sessions = {}
+        if SESSION_CACHE_FILE.exists():
+            sessions = json.loads(SESSION_CACHE_FILE.read_text())
+        sessions[base_url] = {
+            "session_cookie": session_cookie,
+            "cached_at": time.time()
+        }
+        SESSION_CACHE_FILE.write_text(json.dumps(sessions, indent=2))
+        logger.info(f"Saved oMLX session for {base_url}")
+    except Exception as e:
+        logger.warning(f"Failed to save session cache: {e}")
+
 
 class OmlxAdapter(BaseAdapter):
     """Adapter for oMLX server"""
@@ -19,6 +61,11 @@ class OmlxAdapter(BaseAdapter):
     def __init__(self, base_url: str, api_key: str = ""):
         super().__init__(base_url, api_key)
         self._admin_cookie: Optional[str] = None
+        # Try to load cached session
+        cached = _get_cached_session(self.base_url)
+        if cached:
+            self._admin_cookie = cached
+            logger.info(f"Loaded cached oMLX session for {base_url}")
     
     async def check_health(self, client: httpx.AsyncClient) -> dict:
         """
@@ -71,14 +118,16 @@ class OmlxAdapter(BaseAdapter):
                 )
                 if login_resp.status_code == 200:
                     # Get session cookie from login response
-                    cookies = login_resp.cookies
+                    login_cookies = login_resp.cookies
+                    new_session = login_cookies.get("omlx_admin_session")
                     resp = await client.get(
                         f"{self.base_url}/admin/api/stats",
-                        cookies=cookies,
+                        cookies=login_cookies,
                         timeout=10
                     )
                     if resp.status_code == 200:
-                        self._admin_cookie = cookies.get("omlx_admin_session")
+                        self._admin_cookie = new_session
+                        _save_session(self.base_url, self._admin_cookie)
                         return resp.json()
         except Exception as e:
             logger.error(f"oMLX /admin/api/stats error: {e}")

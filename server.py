@@ -5,7 +5,7 @@ FastAPI server for monitoring AI inference servers (oMLX, llama.cpp, Ollama)
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -17,8 +17,16 @@ from pydantic import BaseModel
 
 from adapters import get_adapter
 
-# Config
-CONFIG_FILE = Path(__file__).parent / "config.json"
+import os
+
+# Config directory: /data (docker) or ./ (manual)
+_CONFIG_DIR = os.environ.get("CONFIG_DIR")
+if _CONFIG_DIR:
+    CONFIG_DIR = Path(_CONFIG_DIR)
+else:
+    CONFIG_DIR = Path(__file__).parent
+
+CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -95,7 +103,7 @@ async def get_status():
     
     return MonitorResponse(
         servers=servers,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 

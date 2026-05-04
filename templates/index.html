@@ -256,7 +256,7 @@
         let currentInterval = 2;
         
         // Load config and saved interval
-        const savedInterval = localStorage.getItem('ai-monitor-refresh');
+        const savedInterval = localStorage.getItem('ai-server-control-refresh');
         fetch('/config')
             .then(r => r.json())
             .then(config => {
@@ -276,7 +276,7 @@
         
         document.getElementById('refreshInterval').addEventListener('change', (e) => {
             currentInterval = parseInt(e.target.value);
-            localStorage.setItem('ai-monitor-refresh', currentInterval);
+            localStorage.setItem('ai-server-control-refresh', currentInterval);
             startAutoRefresh();
         });
         
