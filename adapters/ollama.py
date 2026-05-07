@@ -3,6 +3,8 @@ Adapter for Ollama server
 Ollama API docs: https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 
+import asyncio
+import time
 from typing import Optional
 
 import logging
@@ -11,6 +13,36 @@ import httpx
 from .base import BaseAdapter
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache singleton for model capabilities (shared across all adapter instances)
+_MODEL_SHOW_CACHE: dict[str, tuple[dict, float]] = {}
+
+# Cache TTL in seconds (capabilities don't change often)
+_MODEL_SHOW_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_cached_model_show(model_id: str) -> Optional[dict]:
+    """Get cached model show data if not expired."""
+    now = time.time()
+    if model_id in _MODEL_SHOW_CACHE:
+        cached_data, cached_at = _MODEL_SHOW_CACHE[model_id]
+        if now - cached_at < _MODEL_SHOW_CACHE_TTL:
+            return cached_data
+    return None
+
+
+def _set_cached_model_show(model_id: str, data: dict) -> None:
+    """Cache model show data."""
+    _MODEL_SHOW_CACHE[model_id] = (data, time.time())
+
+
+def _clear_expired_cache() -> int:
+    """Remove expired entries from cache. Returns count of removed entries."""
+    now = time.time()
+    expired = [k for k, (_, cached_at) in _MODEL_SHOW_CACHE.items() if now - cached_at >= _MODEL_SHOW_CACHE_TTL]
+    for k in expired:
+        del _MODEL_SHOW_CACHE[k]
+    return len(expired)
 
 
 class OllamaAdapter(BaseAdapter):
@@ -32,11 +64,19 @@ class OllamaAdapter(BaseAdapter):
         except Exception as e:
             return {"status": "offline", "error": str(e)}
     
+    # Module-level cache shared across all adapter instances (see module-level vars above)
+    
     async def _get_model_show(self, client: httpx.AsyncClient, model_id: str) -> Optional[dict]:
         """
         Get detailed model info from /api/show including capabilities.
         Returns dict with capabilities list (vision, tools, thinking, etc).
+        Uses module-level cache with TTL to avoid repeated API calls.
         """
+        # Check module-level cache first
+        cached = _get_cached_model_show(model_id)
+        if cached is not None:
+            return cached
+        
         try:
             resp = await client.post(
                 f"{self.base_url}/api/show",
@@ -45,7 +85,9 @@ class OllamaAdapter(BaseAdapter):
                 timeout=15
             )
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                _set_cached_model_show(model_id, data)
+                return data
             if resp.status_code == 404:
                 return None
             # Other errors - might be auth issue, return None
@@ -53,6 +95,35 @@ class OllamaAdapter(BaseAdapter):
         except Exception as e:
             logger.error(f"Ollama /api/show error for {model_id}: {e}")
             return None
+    
+    async def _fetch_capabilities(self, client: httpx.AsyncClient, model_names: list[str]) -> dict[str, Optional[list[str]]]:
+        """
+        Fetch capabilities for multiple models in parallel.
+        Returns dict mapping model_name -> capabilities list (or None).
+        """
+        async def fetch_one(name: str) -> tuple[str, Optional[list[str]]]:
+            model_show = await self._get_model_show(client, name)
+            if not model_show:
+                return name, None
+            caps = model_show.get("capabilities", [])
+            if not caps:
+                return name, None
+            supports = []
+            cap_map = {
+                "vision": "Vision",
+                "tools": "Tools",
+                "thinking": "Thinking",
+                "completion": "Text",
+                "embedding": "Embedding",
+            }
+            for c in caps:
+                label = cap_map.get(c)
+                if label:
+                    supports.append(label)
+            return name, supports if supports else None
+        
+        results = await asyncio.gather(*[fetch_one(name) for name in model_names])
+        return {name: caps for name, caps in results}
 
     async def get_models(self, client: httpx.AsyncClient) -> list[dict]:
         """
@@ -99,6 +170,12 @@ class OllamaAdapter(BaseAdapter):
             )
             if resp.status_code == 200:
                 data = resp.json()
+                # Collect all model names first for parallel capabilities fetch
+                model_names = [m.get("name", "") for m in data.get("models", [])]
+                
+                # Fetch capabilities for all models in parallel (with cache)
+                all_capabilities = await self._fetch_capabilities(client, model_names)
+                
                 for m in data.get("models", []):
                     name = m.get("name", "")
                     
@@ -117,29 +194,11 @@ class OllamaAdapter(BaseAdapter):
                     vram = info.get("memory")
                     model_size = None if is_cloud else m.get("size")
                     
-                    # Get capabilities from /api/show (also works for cloud models)
-                    capabilities = None
-                    model_show = await self._get_model_show(client, name)
-                    if model_show:
-                        caps = model_show.get("capabilities", [])
-                        if caps:
-                            supports = []
-                            cap_map = {
-                                "vision": "Vision",
-                                "tools": "Tools",
-                                "thinking": "Thinking",
-                                "completion": "Text",
-                                "embedding": "Embedding",
-                            }
-                            for c in caps:
-                                label = cap_map.get(c)
-                                if label:
-                                    supports.append(label)
-                            if is_cloud:
-                                supports.append("Cloud")
-                            capabilities = supports if supports else None
-                    elif is_cloud:
-                        # Cloud model but couldn't get capabilities
+                    # Get capabilities from cache/prefetched data
+                    capabilities = all_capabilities.get(name)
+                    if is_cloud and capabilities:
+                        capabilities = list(capabilities) + ["Cloud"] if capabilities else ["Cloud"]
+                    elif is_cloud and not capabilities:
                         capabilities = ["Cloud"]
                     
                     models.append({

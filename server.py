@@ -3,6 +3,7 @@ AI Server Control - Backend
 FastAPI server for monitoring AI inference servers (oMLX, llama.cpp, Ollama)
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -84,24 +85,19 @@ class ModelActionResponse(BaseModel):
 
 @app.get("/api/status", response_model=MonitorResponse)
 async def get_status():
-    """Get status of all servers"""
-    servers = []
-    async with httpx.AsyncClient() as client:
-        for server in CONFIG["servers"]:
-            adapter = get_adapter(
-                server_type=server["type"],
-                base_url=server["base_url"],
-                api_key=server.get("api_key", "")
-            )
-            
-            # Check health
+    """Get status of all servers in parallel for better performance"""
+    
+    async def fetch_server(server: dict) -> ServerInfo:
+        adapter = get_adapter(
+            server_type=server["type"],
+            base_url=server["base_url"],
+            api_key=server.get("api_key", "")
+        )
+        async with httpx.AsyncClient() as client:
             health = await adapter.check_health(client)
-            
-            # Get models
             raw_models = await adapter.get_models(client) if health["status"] == "online" else []
             models = [ModelInfo(**m) for m in raw_models]
-            
-            server_info = ServerInfo(
+            return ServerInfo(
                 name=server["name"],
                 type=server["type"],
                 type_name=server.get("type_name", server["name"]),
@@ -112,10 +108,12 @@ async def get_status():
                 used_memory=health.get("used_memory"),
                 error=health.get("error")
             )
-            servers.append(server_info)
+    
+    # Fetch all servers in parallel
+    servers = await asyncio.gather(*[fetch_server(s) for s in CONFIG["servers"]])
     
     return MonitorResponse(
-        servers=servers,
+        servers=list(servers),
         timestamp=datetime.now(timezone.utc).isoformat()
     )
 
