@@ -1,4 +1,4 @@
-# ![LLM Warden](logo.png x64x64) LLM Warden
+# ![LLM Warden](logo.png =64x64) LLM Warden
 
 Web dashboard for monitoring AI inference servers (oMLX, llama.cpp, Ollama) with a clean, intuitive interface.
 
