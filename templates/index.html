@@ -525,11 +525,11 @@
                     
                     // VRAM, model size, context, and engine type info for loaded models
                     let extraInfo = '';
-                    if (m.vram) {
-                        let vramLabel = formatBytes(m.vram);
-                        // If total_vram > vram, show warning icon with KV cache overhead
-                        if (m.total_vram && m.total_vram > m.vram) {
-                            extraInfo += `<span class="model-badge badge-vram" title="VRAM: ${formatBytes(m.vram)} (total with RAM: ${formatBytes(m.total_vram)})">${vramLabel} ⚠️</span>`;
+                    if (m.vram_size) {
+                        let vramLabel = formatBytes(m.vram_size);
+                        // If memory_size > vram_size, show warning icon with KV cache overhead
+                        if (m.memory_size && m.memory_size > m.vram_size) {
+                            extraInfo += `<span class="model-badge badge-vram" title="VRAM: ${formatBytes(m.vram_size)} (total with RAM: ${formatBytes(m.memory_size)})">${vramLabel} ⚠️</span>`;
                         } else {
                             extraInfo += `<span class="model-badge badge-vram" title="VRAM">${vramLabel}</span>`;
                         }

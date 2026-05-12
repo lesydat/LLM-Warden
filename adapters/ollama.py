@@ -155,9 +155,8 @@ class OllamaAdapter(BaseAdapter):
                     name = rm.get("name", "")
                     loaded_names.add(name)
                     loaded_info[name] = {
-                        "memory": rm.get("size_vram", rm.get("size")),
-                        "size_vram": rm.get("size_vram"),
-                        "total_vram": rm.get("size"),  # includes KV cache overhead
+                        "vram_size": rm.get("size_vram"),
+                        "memory_size": rm.get("size"),  # total including system RAM
                         "context_length": rm.get("context_length")
                     }
         except Exception as e:
@@ -194,7 +193,7 @@ class OllamaAdapter(BaseAdapter):
                     # Determine VRAM and model size
                     # VRAM from /api/ps (actual memory used) - only for loaded models
                     # model_size from /api/tags - for local models it's file size; for cloud models it's not meaningful
-                    vram = info.get("memory") if is_loaded else None
+                    vram_size = info.get("vram_size") if is_loaded else None
                     model_size = None if is_cloud else m.get("size")
                     
                     # Get capabilities from cache/prefetched data
@@ -209,8 +208,8 @@ class OllamaAdapter(BaseAdapter):
                         "name": name,
                         "load_status": load_status,
                         "activity_status": None,  # Ollama doesn't expose this
-                        "vram": vram,
-                        "total_vram": info.get("total_vram") if is_loaded else None,
+                        "vram_size": vram_size,
+                        "memory_size": info.get("memory_size") if is_loaded else None,
                         "model_size": model_size,
                         "context_window": info.get("context_length") or (
                             m.get("model", {}).get("context_length")

@@ -60,7 +60,6 @@ class LlamacppAdapter(BaseAdapter):
                         "name": m.get("id", ""),
                         "load_status": load_status,
                         "activity_status": None,  # llama.cpp doesn't expose this
-                        "memory": None,  # llama.cpp doesn't provide per-model memory
                         "context_window": m.get("context_length")
                     })
         except Exception as e:

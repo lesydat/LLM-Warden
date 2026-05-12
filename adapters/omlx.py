@@ -335,7 +335,7 @@ class OmlxAdapter(BaseAdapter):
                     # VRAM and model size:
                     # - estimated_size from /admin/api/models is predicted VRAM (always available)
                     # - disk size from /admin/api/hf/models (actual file size on disk)
-                    vram = detail.get("estimated_size")  # always show predicted VRAM
+                    vram_size = detail.get("estimated_size")  # always show predicted VRAM
                     model_size = hf_disk_sizes.get(model_id)
                     
                     models.append({
@@ -343,7 +343,7 @@ class OmlxAdapter(BaseAdapter):
                         "name": model_id,
                         "load_status": load_status,
                         "activity_status": activity_status,
-                        "vram": vram,
+                        "vram_size": vram_size,
                         "model_size": model_size,
                         "context_window": detail.get("max_context_window"),
                         "engine_type": detail.get("model_type"),
