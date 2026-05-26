@@ -456,8 +456,13 @@
         
         function formatBytes(bytes) {
             if (!bytes) return 'N/A';
-            const gb = bytes / (1024**3);
-            return `${gb.toFixed(1)} GB`;
+            // SI decimal: 1 GB = 10^9 bytes
+            const gb = bytes / (1000**3);
+            if (gb >= 1) return `${gb.toFixed(1)} GB`;
+            const mb = bytes / (1000**2);
+            if (mb >= 1) return `${mb.toFixed(0)} MB`;
+            const kb = bytes / (1000**1);
+            return `${kb.toFixed(0)} KB`;
         }
         
         function formatContext(ctx) {
