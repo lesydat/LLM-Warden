@@ -86,20 +86,36 @@ class OmlxAdapter(BaseAdapter):
     
     async def check_health(self, client: httpx.AsyncClient) -> dict:
         """
-        oMLX has /health endpoint with rich info:
-        - status: healthy/unhealthy
-        - engine_pool.loaded_count: number of loaded models
-        - engine_pool.current_model_memory: current memory usage
-        - engine_pool.max_model_memory: maximum memory
+        oMLX health check using /admin/api/stats for accurate memory info.
+        Returns:
+        - status: online/error/offline
+        - used_memory: current model memory usage (from active_models.model_memory_used)
+        - total_memory: hard ceiling (from active_models.model_memory_max)
+        - loaded_count: number of loaded models
         """
         try:
+            # Use /admin/api/stats for accurate memory pressure data
+            admin_stats = await self._get_admin_stats(client)
+            if admin_stats and "active_models" in admin_stats:
+                am = admin_stats["active_models"]
+                loaded_count = len(am.get("models", []))
+                # Only show current (used) and hard (max) - soft is internal only
+                return {
+                    "status": "online",
+                    "error": None,
+                    "total_memory": am.get("model_memory_max"),
+                    "used_memory": am.get("model_memory_used"),
+                    "loaded_count": loaded_count
+                }
+            
+            # Fallback to /health if stats unavailable
             resp = await client.get(f"{self.base_url}/health", timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 return {
                     "status": "online" if data.get("status") == "healthy" else "error",
                     "error": None,
-                    "total_memory": data.get("engine_pool", {}).get("max_model_memory"),
+                    "total_memory": data.get("engine_pool", {}).get("final_ceiling"),
                     "used_memory": data.get("engine_pool", {}).get("current_model_memory"),
                     "loaded_count": data.get("engine_pool", {}).get("loaded_count")
                 }
